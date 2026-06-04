@@ -31,7 +31,7 @@
             <td class="px-6 py-4">
               <select
                 :value="apt.technician_id || ''"
-                @change="handleTechnicianChange(apt.id, $event)"
+                @change="assignTechnician(apt.id, $event.target.value)"
                 class="px-3 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
               >
                 <option value="">待分配</option>
@@ -51,7 +51,7 @@
             <td class="px-6 py-4">
               <select
                 :value="apt.status"
-                @change="handleStatusChange(apt.id, $event)"
+                @change="updateStatus(apt.id, $event.target.value)"
                 class="px-3 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
               >
                 <option value="pending">待确认</option>
@@ -75,7 +75,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { getAllAppointments, updateAppointmentStatus, assignTechnician as assignAppointmentTechnician } from '@/api/appointments';
+import { getAllAppointments, updateAppointmentStatus, assignTechnician } from '@/api/appointments';
 import { getAllTechnicians } from '@/api/technicians';
 
 const appointments = ref<any[]>([]);
@@ -121,22 +121,14 @@ const updateStatus = async (id: number, status: string) => {
   }
 };
 
-const handleStatusChange = (id: number, event: Event) => {
-  updateStatus(id, (event.target as HTMLSelectElement).value);
-};
-
 const assignTechnician = async (aptId: number, techId: string) => {
   if (!techId) return;
   try {
-    await assignAppointmentTechnician(aptId, Number(techId));
+    await assignTechnician(aptId, Number(techId));
     fetchData();
   } catch (error: any) {
     alert(error.response?.data?.message || '分配失败');
   }
-};
-
-const handleTechnicianChange = (aptId: number, event: Event) => {
-  assignTechnician(aptId, (event.target as HTMLSelectElement).value);
 };
 
 onMounted(fetchData);

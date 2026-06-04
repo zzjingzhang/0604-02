@@ -10,7 +10,7 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "moduleResolution": "node",
-    "declaration": false,
+    "declaration": true,
     "sourceMap": true
   },
   "include": ["src/**/*"],
