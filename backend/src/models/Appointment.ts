@@ -27,6 +27,12 @@ export interface Appointment {
   duration?: number;
 }
 
+const assertAffectedRows = (result: any, expected: number, entity: string): void => {
+  if (result.changes !== expected) {
+    throw new Error(`事务失败：${entity} 预期影响 ${expected} 行，实际影响 ${result.changes} 行`);
+  }
+};
+
 export const checkTimeConflict = (
   technicianId: number | null,
   date: string,
@@ -112,6 +118,7 @@ export const createAppointmentWithOrder = (
       description || null,
       APPOINTMENT_STATUS.PENDING
     );
+    assertAffectedRows(appointmentResult, 1, `创建预约`);
     const appointmentId = appointmentResult.lastInsertRowid as number;
 
     const insertWorkOrder = db.prepare(`
@@ -122,6 +129,7 @@ export const createAppointmentWithOrder = (
       appointmentId,
       WORK_ORDER_STATUS.WAITING
     );
+    assertAffectedRows(workOrderResult, 1, `创建工单`);
     const workOrderId = workOrderResult.lastInsertRowid as number;
 
     return { appointmentId, workOrderId };
@@ -196,28 +204,33 @@ export const updateAppointmentStatus = (id: number, status: string): boolean => 
 
   const updateAppt = db.prepare('UPDATE appointments SET status = ? WHERE id = ?');
   const updateWo = db.prepare('UPDATE work_orders SET status = ? WHERE appointment_id = ?');
+  const updateWoWithEndTime = db.prepare(
+    "UPDATE work_orders SET status = ?, end_time = CURRENT_TIMESTAMP WHERE appointment_id = ?"
+  );
 
-  const runTransaction = db.transaction(() => {
-    updateAppt.run(status, id);
+  try {
+    const runTransaction = db.transaction(() => {
+      const aptResult = updateAppt.run(status, id);
+      assertAffectedRows(aptResult, 1, `预约#${id}`);
 
-    const workOrderStatus = APPOINTMENT_TO_WORK_ORDER[status as keyof typeof APPOINTMENT_TO_WORK_ORDER];
+      const workOrderStatus = APPOINTMENT_TO_WORK_ORDER[status as keyof typeof APPOINTMENT_TO_WORK_ORDER];
 
-    if (status === APPOINTMENT_STATUS.PROCESSING) {
-      updateWo.run(workOrderStatus, id);
-    } else if (status === APPOINTMENT_STATUS.COMPLETED) {
-      const stmt = db.prepare(
-        "UPDATE work_orders SET status = ?, end_time = CURRENT_TIMESTAMP WHERE appointment_id = ?"
-      );
-      stmt.run(workOrderStatus, id);
-    } else if (status === APPOINTMENT_STATUS.CANCELLED) {
-      updateWo.run(workOrderStatus, id);
-    } else {
-      updateWo.run(workOrderStatus, id);
-    }
-  });
+      if (workOrderStatus) {
+        let woResult;
+        if (status === APPOINTMENT_STATUS.COMPLETED) {
+          woResult = updateWoWithEndTime.run(workOrderStatus, id);
+        } else {
+          woResult = updateWo.run(workOrderStatus, id);
+        }
+        assertAffectedRows(woResult, 1, `工单（关联预约#${id}）`);
+      }
+    });
 
-  runTransaction();
-  return true;
+    runTransaction();
+    return true;
+  } catch (error) {
+    return false;
+  }
 };
 
 export const updateAppointmentTechnician = (id: number, technicianId: number): void => {
@@ -296,6 +309,15 @@ export const assignTechnicianWithConflictCheck = (
     return { success: false, message: '该技师在此时段已有其他预约，存在时间冲突' };
   }
 
-  updateAppointmentTechnician(appointmentId, technicianId);
-  return { success: true, message: '技师分配成功' };
+  try {
+    const runTransaction = db.transaction(() => {
+      const updateStmt = db.prepare('UPDATE appointments SET technician_id = ? WHERE id = ?');
+      const result = updateStmt.run(technicianId, appointmentId);
+      assertAffectedRows(result, 1, `分配技师到预约#${appointmentId}`);
+    });
+    runTransaction();
+    return { success: true, message: '技师分配成功' };
+  } catch (error) {
+    return { success: false, message: error instanceof Error ? error.message : '分配失败' };
+  }
 };

@@ -121,12 +121,5 @@ export const isWithinBusinessHours = (startTime: string, durationMinutes: number
   if (startMin < BUSINESS_HOURS.START_MINUTES) return false;
   if (endMin > BUSINESS_HOURS.END_MINUTES) return false;
 
-  const lunchStart = 12 * 60;
-  const lunchEnd = 14 * 60;
-
-  if (startMin < lunchStart && endMin > lunchStart) return false;
-  if (startMin < lunchEnd && endMin > lunchEnd) return false;
-  if (startMin >= lunchStart && startMin < lunchEnd) return false;
-
   return true;
 };

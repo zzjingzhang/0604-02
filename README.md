@@ -145,6 +145,42 @@ npm run init-db
 
 初始化脚本会自动创建 5 张表（users / services / technicians / appointments / work_orders），并写入测试数据。
 
+#### 3.1 数据一致性修复
+
+如果历史数据中存在预约与工单状态不一致的问题，可运行修复脚本（**可重复执行，不会重复破坏数据**）：
+
+```bash
+npm run fix-data
+```
+
+**修复规则：**
+1. 工单状态优先（更能反映实际维修结果）
+2. 工单 `waiting` → 预约 `confirmed`
+3. 工单 `in_progress` → 预约 `processing`
+4. 工单 `completed` → 预约 `completed`
+5. 工单 `cancelled` → 预约 `cancelled`
+6. 预约存在但工单缺失时，自动创建对应工单
+7. 执行后输出修复数量统计
+
+**修复原理：**
+脚本位于 [fixDataConsistency.ts](backend/src/scripts/fixDataConsistency.ts)，在同一数据库事务中逐条核对并修正。
+
+**示例输出：**
+```
+⚠️  预约#1 状态不一致: 预约=pending, 工单=in_progress → 应修正为 processing
+   ✅ 已修正
+⚠️  预约#3 没有对应工单，正在创建...
+   ✅ 已创建工单，状态: waiting
+...
+修复结果统计:
+  总预约数: 10
+  状态一致: 7
+  状态已修正: 2
+  新建缺失工单: 1
+  跳过（无映射规则）: 0
+  错误: 0
+```
+
 #### 4. 启动开发服务器
 
 ```bash

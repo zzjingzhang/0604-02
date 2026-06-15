@@ -50,10 +50,14 @@
               required
             >
               <option value="">请选择时间</option>
-              <option v-for="time in timeSlots" :key="time" :value="time">
-                {{ time }}
+              <option v-for="slot in timeSlots" :key="slot.value" :value="slot.value" :disabled="slot.disabled">
+                {{ slot.label }}
+                <span v-if="slot.disabled" class="text-gray-400">（服务时长超出营业时间）</span>
               </option>
             </select>
+            <p v-if="selectedService && form.time" class="mt-1 text-sm text-gray-500">
+              服务时长 {{ selectedService.duration }} 分钟，预计 {{ formatEndTime(form.time, selectedService.duration) }} 结束
+            </p>
           </div>
         </div>
 
@@ -115,10 +119,38 @@ const form = ref({
 
 const minDate = computed(() => dayjs().format('YYYY-MM-DD'));
 
-const timeSlots = [
+const timeToMinutes = (time: string): number => {
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + m;
+};
+
+const allTimeSlots = [
   '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-  '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
+  '12:00', '12:30', '13:00', '13:30', '14:00', '14:30',
+  '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
 ];
+
+const selectedService = computed(() => {
+  return services.value.find(s => s.id === Number(form.value.serviceId));
+});
+
+const timeSlots = computed(() => {
+  const duration = selectedService.value?.duration || 0;
+  return allTimeSlots.map(time => {
+    const startMin = timeToMinutes(time);
+    const endMin = startMin + duration;
+    const disabled = duration > 0 && endMin > 18 * 60;
+    return { value: time, label: time, disabled };
+  });
+});
+
+const formatEndTime = (startTime: string, duration: number): string => {
+  const startMin = timeToMinutes(startTime);
+  const endMin = startMin + duration;
+  const hours = Math.floor(endMin / 60);
+  const minutes = endMin % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+};
 
 onMounted(async () => {
   const [servicesRes, techsRes] = await Promise.all([

@@ -58,7 +58,7 @@ export const addAppointment = async (ctx: Context) => {
   if (!isWithinBusinessHours(time, service.duration)) {
     ctx.status = 400;
     ctx.body = {
-      message: '服务时长超出营业时间范围（09:00-12:00，14:00-18:00），请缩短时长或选择其他时段'
+      message: '服务时长超出营业时间范围（09:00-18:00），请缩短时长或选择其他时段'
     };
     return;
   }

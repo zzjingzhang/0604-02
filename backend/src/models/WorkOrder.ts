@@ -22,6 +22,16 @@ export interface WorkOrder {
   appointment_time?: string;
 }
 
+const assertAffectedRows = (result: any, expected: number, entity: string): void => {
+  if (result.changes !== expected) {
+    throw new Error(`事务失败：${entity} 预期影响 ${expected} 行，实际影响 ${result.changes} 行`);
+  }
+};
+
+export const canModifyProgress = (status: string): boolean => {
+  return status === WORK_ORDER_STATUS.WAITING || status === WORK_ORDER_STATUS.IN_PROGRESS;
+};
+
 export const createWorkOrder = (appointmentId: number): number => {
   const stmt = db.prepare(`
     INSERT INTO work_orders (appointment_id, status)
@@ -78,30 +88,40 @@ export const updateWorkOrderStatus = (
   const current = getWorkOrderById(id);
   if (!current) return false;
 
-  if (current.status === status) return true;
-
-  if (!isValidStatusTransition(current.status, status, VALID_WORK_ORDER_TRANSITIONS)) {
+  if (!canModifyProgress(current.status) && current.status !== status) {
     return false;
+  }
+
+  if (current.status !== status) {
+    if (!isValidStatusTransition(current.status, status, VALID_WORK_ORDER_TRANSITIONS)) {
+      return false;
+    }
   }
 
   const appointmentStatus = WORK_ORDER_TO_APPOINTMENT[status as keyof typeof WORK_ORDER_TO_APPOINTMENT];
 
-  const runTransaction = db.transaction(() => {
-    const updateWo = db.prepare(
-      'UPDATE work_orders SET status = ?, progress = ? WHERE id = ?'
-    );
-    updateWo.run(status, progress || null, id);
-
-    if (appointmentStatus) {
-      const updateApt = db.prepare(
-        'UPDATE appointments SET status = ? WHERE id = ?'
+  try {
+    const runTransaction = db.transaction(() => {
+      const updateWo = db.prepare(
+        'UPDATE work_orders SET status = ?, progress = ? WHERE id = ?'
       );
-      updateApt.run(appointmentStatus, current.appointment_id);
-    }
-  });
+      const woResult = updateWo.run(status, progress !== undefined ? progress : current.progress, id);
+      assertAffectedRows(woResult, 1, `工单#${id}`);
 
-  runTransaction();
-  return true;
+      if (appointmentStatus && current.status !== status) {
+        const updateApt = db.prepare(
+          'UPDATE appointments SET status = ? WHERE id = ?'
+        );
+        const aptResult = updateApt.run(appointmentStatus, current.appointment_id);
+        assertAffectedRows(aptResult, 1, `预约#${current.appointment_id}`);
+      }
+    });
+
+    runTransaction();
+    return true;
+  } catch (error) {
+    return false;
+  }
 };
 
 export const startWorkOrder = (id: number): boolean => {
@@ -114,21 +134,27 @@ export const startWorkOrder = (id: number): boolean => {
     return false;
   }
 
-  const runTransaction = db.transaction(() => {
-    const updateWo = db.prepare(`
-      UPDATE work_orders SET status = ?, start_time = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-    updateWo.run(WORK_ORDER_STATUS.IN_PROGRESS, id);
+  try {
+    const runTransaction = db.transaction(() => {
+      const updateWo = db.prepare(`
+        UPDATE work_orders SET status = ?, start_time = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `);
+      const woResult = updateWo.run(WORK_ORDER_STATUS.IN_PROGRESS, id);
+      assertAffectedRows(woResult, 1, `工单#${id}`);
 
-    const updateApt = db.prepare(
-      'UPDATE appointments SET status = ? WHERE id = ?'
-    );
-    updateApt.run(APPOINTMENT_STATUS.PROCESSING, current.appointment_id);
-  });
+      const updateApt = db.prepare(
+        'UPDATE appointments SET status = ? WHERE id = ?'
+      );
+      const aptResult = updateApt.run(APPOINTMENT_STATUS.PROCESSING, current.appointment_id);
+      assertAffectedRows(aptResult, 1, `预约#${current.appointment_id}`);
+    });
 
-  runTransaction();
-  return true;
+    runTransaction();
+    return true;
+  } catch (error) {
+    return false;
+  }
 };
 
 export const completeWorkOrder = (id: number): boolean => {
@@ -141,21 +167,27 @@ export const completeWorkOrder = (id: number): boolean => {
     return false;
   }
 
-  const runTransaction = db.transaction(() => {
-    const updateWo = db.prepare(`
-      UPDATE work_orders SET status = ?, end_time = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-    updateWo.run(WORK_ORDER_STATUS.COMPLETED, id);
+  try {
+    const runTransaction = db.transaction(() => {
+      const updateWo = db.prepare(`
+        UPDATE work_orders SET status = ?, end_time = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `);
+      const woResult = updateWo.run(WORK_ORDER_STATUS.COMPLETED, id);
+      assertAffectedRows(woResult, 1, `工单#${id}`);
 
-    const updateApt = db.prepare(
-      'UPDATE appointments SET status = ? WHERE id = ?'
-    );
-    updateApt.run(APPOINTMENT_STATUS.COMPLETED, current.appointment_id);
-  });
+      const updateApt = db.prepare(
+        'UPDATE appointments SET status = ? WHERE id = ?'
+      );
+      const aptResult = updateApt.run(APPOINTMENT_STATUS.COMPLETED, current.appointment_id);
+      assertAffectedRows(aptResult, 1, `预约#${current.appointment_id}`);
+    });
 
-  runTransaction();
-  return true;
+    runTransaction();
+    return true;
+  } catch (error) {
+    return false;
+  }
 };
 
 export const getWorkOrdersByUserId = (userId: number): WorkOrder[] => {
