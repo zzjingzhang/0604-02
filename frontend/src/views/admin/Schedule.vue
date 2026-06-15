@@ -193,8 +193,12 @@ import { getScheduleByDate } from '@/api/appointments';
 import { getAllTechnicians } from '@/api/technicians';
 import dayjs from 'dayjs';
 
-const SLOT_HEIGHT_PX = 48;
+const SLOT_CONTENT_HEIGHT_PX = 48;
+const GRID_GAP_PX = 1;
 const SLOT_MINUTES = 30;
+
+const APPOINTMENT_PADDING_PX = 4;
+const CONFLICT_GAP_PX = 4;
 
 interface Technician {
   id: number;
@@ -269,8 +273,9 @@ const headerCells = computed(() => {
 const gridStyle = computed(() => {
   const rows = timeSlots.length;
   return {
+    gap: `${GRID_GAP_PX}px`,
     gridTemplateColumns: `5rem repeat(${technicians.value.length}, 11rem)`,
-    gridTemplateRows: `3rem repeat(${rows}, ${SLOT_HEIGHT_PX}px)`
+    gridTemplateRows: `3rem repeat(${rows}, ${SLOT_CONTENT_HEIGHT_PX}px)`
   };
 });
 
@@ -408,20 +413,22 @@ const getAppointmentsAtSlot = (techId: number, slotIndex: number): ProcessedAppo
 };
 
 const getAppointmentStyle = (apt: ProcessedAppointment) => {
-  const topPx = 2;
-  const heightPx = apt.slotSpan * SLOT_HEIGHT_PX - 4;
-
-  let leftPx = 2;
-  let widthPx = `calc(100% - 4px)`;
+  const topPx = APPOINTMENT_PADDING_PX / 2;
+  const padding = APPOINTMENT_PADDING_PX;
+  const heightPx = apt.slotSpan * SLOT_CONTENT_HEIGHT_PX
+    + (apt.slotSpan - 1) * GRID_GAP_PX
+    - padding;
 
   if (apt.hasConflict && apt.conflictCount > 0) {
-    leftPx = 2 + apt.conflictOffset * (100 / (apt.conflictCount + 1)) + apt.conflictOffset * 2;
-    widthPx = `calc((100% - 4px - ${apt.conflictCount * 4}px) / ${apt.conflictCount + 1})`;
+    const totalCount = apt.conflictCount + 1;
+    const conflictGapPct = (CONFLICT_GAP_PX * (totalCount - 1)) / totalCount;
+    const leftPct = (apt.conflictOffset / totalCount) * 100;
+    const widthPct = 100 / totalCount;
 
     return {
       top: `${topPx}px`,
-      left: `${leftPx}px`,
-      width: widthPx,
+      left: `calc(${leftPct}% + ${apt.conflictOffset * CONFLICT_GAP_PX}px)`,
+      width: `calc(${widthPct}% - ${conflictGapPct}px)`,
       height: `${heightPx}px`,
       zIndex: 20 + apt.conflictOffset
     };
@@ -429,8 +436,8 @@ const getAppointmentStyle = (apt: ProcessedAppointment) => {
 
   return {
     top: `${topPx}px`,
-    left: `${leftPx}px`,
-    width: widthPx,
+    left: `${padding / 2}px`,
+    width: `calc(100% - ${padding}px)`,
     height: `${heightPx}px`,
     zIndex: 10
   };

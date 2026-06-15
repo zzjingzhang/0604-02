@@ -192,14 +192,48 @@ export const getAllAppointments = (): Appointment[] => {
   return stmt.all() as Appointment[];
 };
 
-export const updateAppointmentStatus = (id: number, status: string): boolean => {
-  const current = getAppointmentById(id);
-  if (!current) return false;
+export const APPOINTMENT_STATUS_VALUES = Object.values(APPOINTMENT_STATUS);
 
-  if (current.status === status) return true;
+export type StatusUpdateResult = {
+  success: boolean;
+  errorType?: 'invalid_status' | 'invalid_transition' | 'workorder_missing' | 'transaction_failed' | 'not_found';
+  message?: string;
+};
+
+export const updateAppointmentStatus = (id: number, status: string): StatusUpdateResult => {
+  const current = getAppointmentById(id);
+  if (!current) {
+    return { success: false, errorType: 'not_found', message: '预约不存在' };
+  }
+
+  if (!APPOINTMENT_STATUS_VALUES.includes(status as any)) {
+    return {
+      success: false,
+      errorType: 'invalid_status',
+      message: `无效的状态值：${status}，合法值为：${APPOINTMENT_STATUS_VALUES.join('、')}`
+    };
+  }
+
+  if (current.status === status) {
+    return { success: true, message: '状态未变更' };
+  }
 
   if (!isValidStatusTransition(current.status, status, VALID_APPOINTMENT_TRANSITIONS)) {
-    return false;
+    return {
+      success: false,
+      errorType: 'invalid_transition',
+      message: `不允许的状态跳转：从「${current.status}」到「${status}」`
+    };
+  }
+
+  const workOrderStatus = APPOINTMENT_TO_WORK_ORDER[status as keyof typeof APPOINTMENT_TO_WORK_ORDER];
+  const existingWO = db.prepare('SELECT id FROM work_orders WHERE appointment_id = ?').get(id);
+  if (!existingWO) {
+    return {
+      success: false,
+      errorType: 'workorder_missing',
+      message: `关联工单不存在，状态同步失败（预约#${id}缺少对应work_order记录）`
+    };
   }
 
   const updateAppt = db.prepare('UPDATE appointments SET status = ? WHERE id = ?');
@@ -213,8 +247,6 @@ export const updateAppointmentStatus = (id: number, status: string): boolean => 
       const aptResult = updateAppt.run(status, id);
       assertAffectedRows(aptResult, 1, `预约#${id}`);
 
-      const workOrderStatus = APPOINTMENT_TO_WORK_ORDER[status as keyof typeof APPOINTMENT_TO_WORK_ORDER];
-
       if (workOrderStatus) {
         let woResult;
         if (status === APPOINTMENT_STATUS.COMPLETED) {
@@ -227,9 +259,15 @@ export const updateAppointmentStatus = (id: number, status: string): boolean => 
     });
 
     runTransaction();
-    return true;
+    return { success: true, message: '状态更新成功（工单已同步）' };
   } catch (error) {
-    return false;
+    return {
+      success: false,
+      errorType: 'transaction_failed',
+      message: error instanceof Error
+        ? `数据库事务执行失败：${error.message}`
+        : '数据库事务执行失败，数据已回滚'
+    };
   }
 };
 

@@ -156,6 +156,12 @@ export const updateStatus = async (ctx: Context) => {
   const id = parseInt(ctx.params.id);
   const { status } = ctx.request.body as { status: string };
 
+  if (!status) {
+    ctx.status = 400;
+    ctx.body = { message: '状态值不能为空' };
+    return;
+  }
+
   const existingAppointment = getAppointmentById(id);
   if (!existingAppointment) {
     ctx.status = 404;
@@ -163,16 +169,40 @@ export const updateStatus = async (ctx: Context) => {
     return;
   }
 
-  const success = updateAppointmentStatus(id, status);
-  if (!success) {
-    ctx.status = 400;
-    ctx.body = {
-      message: `无法将预约状态从「${existingAppointment.status}」更新为「${status}」，状态跳转不合法`
-    };
+  const result = updateAppointmentStatus(id, status);
+
+  if (result.success) {
+    ctx.body = { message: result.message || '预约状态更新成功（工单已同步）' };
     return;
   }
 
-  ctx.body = { message: '预约状态更新成功（工单已同步）' };
+  switch (result.errorType) {
+    case 'invalid_status':
+      ctx.status = 400;
+      ctx.body = { message: result.message };
+      break;
+    case 'invalid_transition':
+      ctx.status = 400;
+      ctx.body = { message: result.message };
+      break;
+    case 'workorder_missing':
+      ctx.status = 400;
+      ctx.body = { message: result.message };
+      break;
+    case 'transaction_failed':
+      ctx.status = 500;
+      ctx.body = { message: result.message };
+      break;
+    case 'not_found':
+      ctx.status = 404;
+      ctx.body = { message: result.message };
+      break;
+    default:
+      ctx.status = 400;
+      ctx.body = {
+        message: `无法将预约状态从「${existingAppointment.status}」更新为「${status}」`
+      };
+  }
 };
 
 export const assignTechnician = async (ctx: Context) => {

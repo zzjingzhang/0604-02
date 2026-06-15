@@ -113,7 +113,8 @@ const fetchData = async () => {
 const startOrder = async (id: number) => {
   try {
     await startWorkOrder(id);
-    fetchData();
+    await fetchData();
+    alert('工单开始成功');
   } catch (error: any) {
     alert(error.response?.data?.message || '操作失败');
   }
@@ -122,7 +123,8 @@ const startOrder = async (id: number) => {
 const completeOrder = async (id: number) => {
   try {
     await completeWorkOrder(id);
-    fetchData();
+    await fetchData();
+    alert('工单完成成功');
   } catch (error: any) {
     alert(error.response?.data?.message || '操作失败');
   }
@@ -131,7 +133,12 @@ const completeOrder = async (id: number) => {
 const updateOrderProgress = async (id: number) => {
   try {
     await updateWorkOrderStatus(id, 'in_progress', progressMap[id]);
-    alert('更新成功');
+    try {
+      await fetchData();
+      alert('更新成功，页面已刷新为最新进度');
+    } catch (refreshError: any) {
+      alert('进度更新成功，但列表刷新失败：' + (refreshError.response?.data?.message || '请手动刷新页面'));
+    }
   } catch (error: any) {
     alert(error.response?.data?.message || '更新失败');
   }
