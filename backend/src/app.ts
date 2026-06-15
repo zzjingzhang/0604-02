@@ -1,6 +1,7 @@
 import Koa from 'koa';
 import bodyParser from 'koa-bodyparser';
 import cors from '@koa/cors';
+import { PORT } from './config/jwt';
 import authRoutes from './routes/auth';
 import serviceRoutes from './routes/services';
 import appointmentRoutes from './routes/appointments';
@@ -9,7 +10,6 @@ import workOrderRoutes from './routes/workOrders';
 import adminRoutes from './routes/admin';
 
 const app = new Koa();
-const PORT = 8002;
 
 app.use(cors({
   origin: 'http://localhost:5102',

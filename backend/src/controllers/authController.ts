@@ -27,7 +27,7 @@ export const register = async (ctx: Context) => {
   }
 
   const hashedPassword = bcrypt.hashSync(password, 10);
-  const userRole = role === 'admin' ? 'admin' : 'customer';
+  const userRole = 'customer';
 
   try {
     const userId = createUser(username, email, hashedPassword, userRole, phone);
@@ -35,8 +35,8 @@ export const register = async (ctx: Context) => {
 
     const token = jwt.sign(
       { id: userId, username, email, role: userRole },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN }
+      JWT_SECRET as jwt.Secret,
+      { expiresIn: JWT_EXPIRES_IN as any }
     );
 
     ctx.status = 201;
@@ -85,8 +85,8 @@ export const login = async (ctx: Context) => {
 
   const token = jwt.sign(
     { id: user.id, username: user.username, email: user.email, role: user.role },
-    JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN }
+    JWT_SECRET as jwt.Secret,
+    { expiresIn: JWT_EXPIRES_IN as any }
   );
 
   ctx.body = {

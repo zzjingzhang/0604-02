@@ -59,6 +59,16 @@ export const getWorkOrderByAppointment = async (ctx: Context) => {
     return;
   }
 
+  if (userRole !== 'admin') {
+    const userWorkOrders = getWorkOrdersByUserId(userId);
+    const hasAccess = userWorkOrders.some(wo => wo.id === workOrder.id);
+    if (!hasAccess) {
+      ctx.status = 403;
+      ctx.body = { message: '无权查看此工单' };
+      return;
+    }
+  }
+
   ctx.body = { workOrder };
 };
 

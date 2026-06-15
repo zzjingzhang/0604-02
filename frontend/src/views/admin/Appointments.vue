@@ -8,12 +8,24 @@
       <table class="w-full">
         <thead class="bg-gray-50">
           <tr>
-            <th class="px-6 py-3 text-left text-sm font-semibold text-gray-600">顾客</th>
-            <th class="px-6 py-3 text-left text-sm font-semibold text-gray-600">服务项目</th>
-            <th class="px-6 py-3 text-left text-sm font-semibold text-gray-600">日期时间</th>
-            <th class="px-6 py-3 text-left text-sm font-semibold text-gray-600">技师</th>
-            <th class="px-6 py-3 text-left text-sm font-semibold text-gray-600">状态</th>
-            <th class="px-6 py-3 text-left text-sm font-semibold text-gray-600">操作</th>
+            <th class="px-6 py-3 text-left text-sm font-semibold text-gray-600">
+              顾客
+            </th>
+            <th class="px-6 py-3 text-left text-sm font-semibold text-gray-600">
+              服务项目
+            </th>
+            <th class="px-6 py-3 text-left text-sm font-semibold text-gray-600">
+              日期时间
+            </th>
+            <th class="px-6 py-3 text-left text-sm font-semibold text-gray-600">
+              技师
+            </th>
+            <th class="px-6 py-3 text-left text-sm font-semibold text-gray-600">
+              状态
+            </th>
+            <th class="px-6 py-3 text-left text-sm font-semibold text-gray-600">
+              操作
+            </th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-200">
@@ -22,7 +34,9 @@
               <div class="font-medium text-gray-800">{{ apt.username }}</div>
             </td>
             <td class="px-6 py-4">
-              <div class="font-medium text-gray-800">{{ apt.service_name }}</div>
+              <div class="font-medium text-gray-800">
+                {{ apt.service_name }}
+              </div>
               <div class="text-sm text-gray-500">¥{{ apt.price }}</div>
             </td>
             <td class="px-6 py-4 text-gray-600">
@@ -31,11 +45,20 @@
             <td class="px-6 py-4">
               <select
                 :value="apt.technician_id || ''"
-                @change="assignTechnician(apt.id, $event.target.value)"
+                @change="
+                  assignTechnician(
+                    apt.id,
+                    ($event.target as HTMLSelectElement).value,
+                  )
+                "
                 class="px-3 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
               >
                 <option value="">待分配</option>
-                <option v-for="tech in technicians" :key="tech.id" :value="tech.id">
+                <option
+                  v-for="tech in technicians"
+                  :key="tech.id"
+                  :value="tech.id"
+                >
                   {{ tech.name }}
                 </option>
               </select>
@@ -51,7 +74,12 @@
             <td class="px-6 py-4">
               <select
                 :value="apt.status"
-                @change="updateStatus(apt.id, $event.target.value)"
+                @change="
+                  updateStatus(
+                    apt.id,
+                    ($event.target as HTMLSelectElement).value,
+                  )
+                "
                 class="px-3 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
               >
                 <option value="pending">待确认</option>
@@ -74,31 +102,35 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { getAllAppointments, updateAppointmentStatus, assignTechnician } from '@/api/appointments';
-import { getAllTechnicians } from '@/api/technicians';
+import { ref, onMounted } from "vue";
+import {
+  getAllAppointments,
+  updateAppointmentStatus,
+  assignTechnician as assignTechnicianApi,
+} from "@/api/appointments";
+import { getAllTechnicians } from "@/api/technicians";
 
 const appointments = ref<any[]>([]);
 const technicians = ref<any[]>([]);
 
 const getStatusClass = (status: string) => {
   const classes: Record<string, string> = {
-    pending: 'bg-yellow-100 text-yellow-800',
-    confirmed: 'bg-blue-100 text-blue-800',
-    processing: 'bg-green-100 text-green-800',
-    completed: 'bg-gray-100 text-gray-800',
-    cancelled: 'bg-red-100 text-red-800'
+    pending: "bg-yellow-100 text-yellow-800",
+    confirmed: "bg-blue-100 text-blue-800",
+    processing: "bg-green-100 text-green-800",
+    completed: "bg-gray-100 text-gray-800",
+    cancelled: "bg-red-100 text-red-800",
   };
-  return classes[status] || 'bg-gray-100 text-gray-800';
+  return classes[status] || "bg-gray-100 text-gray-800";
 };
 
 const getStatusText = (status: string) => {
   const texts: Record<string, string> = {
-    pending: '待确认',
-    confirmed: '已确认',
-    processing: '维修中',
-    completed: '已完成',
-    cancelled: '已取消'
+    pending: "待确认",
+    confirmed: "已确认",
+    processing: "维修中",
+    completed: "已完成",
+    cancelled: "已取消",
   };
   return texts[status] || status;
 };
@@ -106,7 +138,7 @@ const getStatusText = (status: string) => {
 const fetchData = async () => {
   const [appointmentsRes, techniciansRes] = await Promise.all([
     getAllAppointments(),
-    getAllTechnicians()
+    getAllTechnicians(),
   ]);
   appointments.value = (appointmentsRes as any).appointments;
   technicians.value = (techniciansRes as any).technicians;
@@ -117,17 +149,19 @@ const updateStatus = async (id: number, status: string) => {
     await updateAppointmentStatus(id, status);
     fetchData();
   } catch (error: any) {
-    alert(error.response?.data?.message || '更新失败');
+    alert(error.response?.data?.message || "更新失败");
   }
 };
 
 const assignTechnician = async (aptId: number, techId: string) => {
   if (!techId) return;
   try {
-    await assignTechnician(aptId, Number(techId));
+    await assignTechnicianApi(aptId, Number(techId));
     fetchData();
   } catch (error: any) {
-    alert(error.response?.data?.message || '分配失败');
+    const msg = error.response?.data?.message || "分配失败";
+    alert(`分配技师失败：${msg}`);
+    fetchData();
   }
 };
 

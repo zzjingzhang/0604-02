@@ -11,6 +11,7 @@ import {
 } from '../models/Appointment';
 import { getServiceById } from '../models/Service';
 import { createWorkOrder } from '../models/WorkOrder';
+import { getTechnicianById } from '../models/Technician';
 
 export const addAppointment = async (ctx: Context) => {
   const userId = ctx.state.user.id;
@@ -128,10 +129,49 @@ export const assignTechnician = async (ctx: Context) => {
   const id = parseInt(ctx.params.id);
   const { technicianId } = ctx.request.body as { technicianId: number };
 
+  if (!technicianId) {
+    ctx.status = 400;
+    ctx.body = { message: '技师ID不能为空' };
+    return;
+  }
+
   const existingAppointment = getAppointmentById(id);
   if (!existingAppointment) {
     ctx.status = 404;
     ctx.body = { message: '预约不存在' };
+    return;
+  }
+
+  const technician = getTechnicianById(technicianId);
+  if (!technician) {
+    ctx.status = 400;
+    ctx.body = { message: '指定的技师不存在' };
+    return;
+  }
+
+  if (technician.status !== 'active') {
+    ctx.status = 400;
+    ctx.body = { message: '该技师已停用，无法分配' };
+    return;
+  }
+
+  const service = getServiceById(existingAppointment.service_id);
+  if (!service) {
+    ctx.status = 400;
+    ctx.body = { message: '关联的服务项目不存在' };
+    return;
+  }
+
+  const hasConflict = checkTimeConflict(
+    technicianId,
+    existingAppointment.appointment_date,
+    existingAppointment.appointment_time,
+    service.duration,
+    id
+  );
+  if (hasConflict) {
+    ctx.status = 400;
+    ctx.body = { message: '该技师在此时段已有其他预约，存在时间冲突' };
     return;
   }
 
