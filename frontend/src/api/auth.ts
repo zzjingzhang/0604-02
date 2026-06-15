@@ -4,7 +4,7 @@ export const login = (data: { email: string; password: string }) => {
   return request.post('/auth/login', data);
 };
 
-export const register = (data: { username: string; email: string; password: string; phone?: string; role?: string }) => {
+export const register = (data: { username: string; email: string; password: string; phone?: string }) => {
   return request.post('/auth/register', data);
 };
 

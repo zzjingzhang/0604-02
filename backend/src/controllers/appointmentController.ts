@@ -1,17 +1,23 @@
 import { Context } from 'koa';
 import {
   checkTimeConflict,
-  createAppointment,
   getAppointmentsByUserId,
   getAppointmentById,
   getAllAppointments,
   updateAppointmentStatus,
-  updateAppointmentTechnician,
-  getAppointmentsByDate
+  getAppointmentsByDate,
+  findAvailableTechnician,
+  createAppointmentWithOrder
 } from '../models/Appointment';
 import { getServiceById } from '../models/Service';
-import { createWorkOrder } from '../models/WorkOrder';
 import { getTechnicianById } from '../models/Technician';
+import { assignTechnicianWithConflictCheck } from '../models/Appointment';
+import {
+  isValidDateFormat,
+  isValidTimeSlot,
+  isWithinBusinessHours,
+  timeToMinutes
+} from '../utils/status';
 
 export const addAppointment = async (ctx: Context) => {
   const userId = ctx.state.user.id;
@@ -30,42 +36,83 @@ export const addAppointment = async (ctx: Context) => {
     return;
   }
 
+  if (!isValidDateFormat(date)) {
+    ctx.status = 400;
+    ctx.body = { message: '日期格式无效，请使用 YYYY-MM-DD 格式' };
+    return;
+  }
+
+  if (!isValidTimeSlot(time)) {
+    ctx.status = 400;
+    ctx.body = { message: '时间格式无效或不符合预约粒度（30分钟），请选择 00 或 30 分的整点时间' };
+    return;
+  }
+
   const service = getServiceById(serviceId);
   if (!service) {
-    ctx.status = 404;
+    ctx.status = 400;
     ctx.body = { message: '服务项目不存在' };
     return;
   }
 
-  const hasConflict = checkTimeConflict(technicianId || null, date, time, service.duration);
-  if (hasConflict) {
+  if (!isWithinBusinessHours(time, service.duration)) {
     ctx.status = 400;
-    ctx.body = { message: '该时间段已有预约，请选择其他时间' };
+    ctx.body = {
+      message: '服务时长超出营业时间范围（09:00-12:00，14:00-18:00），请缩短时长或选择其他时段'
+    };
     return;
   }
 
-  const [hours] = time.split(':').map(Number);
-  if (hours < 9 || hours >= 18) {
-    ctx.status = 400;
-    ctx.body = { message: '预约时间需在工作时间内（09:00 - 18:00）' };
-    return;
+  let finalTechnicianId: number;
+
+  if (technicianId) {
+    const technician = getTechnicianById(technicianId);
+    if (!technician) {
+      ctx.status = 400;
+      ctx.body = { message: '指定的技师不存在' };
+      return;
+    }
+    if (technician.status !== 'active') {
+      ctx.status = 400;
+      ctx.body = { message: '该技师已停用，无法预约' };
+      return;
+    }
+
+    const hasConflict = checkTimeConflict(technicianId, date, time, service.duration);
+    if (hasConflict) {
+      ctx.status = 400;
+      ctx.body = { message: '该技师在该时段已有预约，请选择其他时间或技师' };
+      return;
+    }
+
+    finalTechnicianId = technicianId;
+  } else {
+    const availableTechId = findAvailableTechnician(date, time, service.duration);
+    if (!availableTechId) {
+      ctx.status = 400;
+      ctx.body = { message: '该时段所有技师均已预约，请选择其他时间' };
+      return;
+    }
+    finalTechnicianId = availableTechId;
   }
 
   try {
-    const appointmentId = createAppointment(
+    const { appointmentId, workOrderId } = createAppointmentWithOrder(
       userId,
       serviceId,
-      technicianId || null,
+      finalTechnicianId,
       date,
       time,
       carInfo,
       description
     );
 
-    createWorkOrder(appointmentId);
-
     ctx.status = 201;
-    ctx.body = { message: '预约成功', id: appointmentId };
+    ctx.body = {
+      message: '预约成功',
+      id: appointmentId,
+      workOrderId
+    };
   } catch (error) {
     ctx.status = 500;
     ctx.body = { message: '预约失败', error };
@@ -116,13 +163,16 @@ export const updateStatus = async (ctx: Context) => {
     return;
   }
 
-  try {
-    updateAppointmentStatus(id, status);
-    ctx.body = { message: '预约状态更新成功' };
-  } catch (error) {
-    ctx.status = 500;
-    ctx.body = { message: '更新预约状态失败', error };
+  const success = updateAppointmentStatus(id, status);
+  if (!success) {
+    ctx.status = 400;
+    ctx.body = {
+      message: `无法将预约状态从「${existingAppointment.status}」更新为「${status}」，状态跳转不合法`
+    };
+    return;
   }
+
+  ctx.body = { message: '预约状态更新成功（工单已同步）' };
 };
 
 export const assignTechnician = async (ctx: Context) => {
@@ -132,13 +182,6 @@ export const assignTechnician = async (ctx: Context) => {
   if (!technicianId) {
     ctx.status = 400;
     ctx.body = { message: '技师ID不能为空' };
-    return;
-  }
-
-  const existingAppointment = getAppointmentById(id);
-  if (!existingAppointment) {
-    ctx.status = 404;
-    ctx.body = { message: '预约不存在' };
     return;
   }
 
@@ -155,37 +198,26 @@ export const assignTechnician = async (ctx: Context) => {
     return;
   }
 
-  const service = getServiceById(existingAppointment.service_id);
-  if (!service) {
+  const result = assignTechnicianWithConflictCheck(id, technicianId);
+
+  if (!result.success) {
     ctx.status = 400;
-    ctx.body = { message: '关联的服务项目不存在' };
+    ctx.body = { message: result.message };
     return;
   }
 
-  const hasConflict = checkTimeConflict(
-    technicianId,
-    existingAppointment.appointment_date,
-    existingAppointment.appointment_time,
-    service.duration,
-    id
-  );
-  if (hasConflict) {
-    ctx.status = 400;
-    ctx.body = { message: '该技师在此时段已有其他预约，存在时间冲突' };
-    return;
-  }
-
-  try {
-    updateAppointmentTechnician(id, technicianId);
-    ctx.body = { message: '技师分配成功' };
-  } catch (error) {
-    ctx.status = 500;
-    ctx.body = { message: '分配技师失败', error };
-  }
+  ctx.body = { message: result.message };
 };
 
 export const getScheduleByDate = async (ctx: Context) => {
   const { date } = ctx.params;
+
+  if (!isValidDateFormat(date)) {
+    ctx.status = 400;
+    ctx.body = { message: '日期格式无效' };
+    return;
+  }
+
   const appointments = getAppointmentsByDate(date);
   ctx.body = { appointments };
 };
@@ -198,6 +230,32 @@ export const checkConflict = async (ctx: Context) => {
     duration: number;
   };
 
-  const hasConflict = checkTimeConflict(technicianId || null, date, time, duration);
+  if (!date || !time || !duration) {
+    ctx.status = 400;
+    ctx.body = { message: '日期、时间和时长必填' };
+    return;
+  }
+
+  if (!isValidDateFormat(date) || !isValidTimeSlot(time)) {
+    ctx.status = 400;
+    ctx.body = { message: '日期或时间格式无效' };
+    return;
+  }
+
+  let hasConflict: boolean;
+
+  if (technicianId) {
+    const technician = getTechnicianById(technicianId);
+    if (!technician || technician.status !== 'active') {
+      ctx.status = 400;
+      ctx.body = { message: '指定的技师不存在或已停用' };
+      return;
+    }
+    hasConflict = checkTimeConflict(technicianId, date, time, duration);
+  } else {
+    const availableTechId = findAvailableTechnician(date, time, duration);
+    hasConflict = availableTechId === null;
+  }
+
   ctx.body = { hasConflict };
 };

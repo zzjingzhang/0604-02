@@ -86,13 +86,16 @@ export const updateStatus = async (ctx: Context) => {
     return;
   }
 
-  try {
-    updateWorkOrderStatus(id, status, progress);
-    ctx.body = { message: '工单状态更新成功' };
-  } catch (error) {
-    ctx.status = 500;
-    ctx.body = { message: '更新工单状态失败', error };
+  const success = updateWorkOrderStatus(id, status, progress);
+  if (!success) {
+    ctx.status = 400;
+    ctx.body = {
+      message: `无法将工单状态从「${existingWorkOrder.status}」更新为「${status}」，状态跳转不合法`
+    };
+    return;
   }
+
+  ctx.body = { message: '工单状态更新成功（预约已同步）' };
 };
 
 export const startOrder = async (ctx: Context) => {
@@ -105,13 +108,16 @@ export const startOrder = async (ctx: Context) => {
     return;
   }
 
-  try {
-    startWorkOrder(id);
-    ctx.body = { message: '工单已开始' };
-  } catch (error) {
-    ctx.status = 500;
-    ctx.body = { message: '开始工单失败', error };
+  const success = startWorkOrder(id);
+  if (!success) {
+    ctx.status = 400;
+    ctx.body = {
+      message: `无法开始工单：当前状态「${existingWorkOrder.status}」不允许开始维修`
+    };
+    return;
   }
+
+  ctx.body = { message: '工单已开始（预约状态已同步为维修中）' };
 };
 
 export const completeOrder = async (ctx: Context) => {
@@ -124,11 +130,14 @@ export const completeOrder = async (ctx: Context) => {
     return;
   }
 
-  try {
-    completeWorkOrder(id);
-    ctx.body = { message: '工单已完成' };
-  } catch (error) {
-    ctx.status = 500;
-    ctx.body = { message: '完成工单失败', error };
+  const success = completeWorkOrder(id);
+  if (!success) {
+    ctx.status = 400;
+    ctx.body = {
+      message: `无法完成工单：当前状态「${existingWorkOrder.status}」不允许标记完成`
+    };
+    return;
   }
+
+  ctx.body = { message: '工单已完成（预约状态已同步为已完成）' };
 };
